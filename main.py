@@ -6,6 +6,9 @@ import json,collections,xml
 from lxml import etree
 import time
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import threading
+import queue
+from time import sleep
 
 import blivedm
 
@@ -37,18 +40,41 @@ async def send_qq_group_msg(group_id, message):
     response = requests.post("http://127.0.0.1:5700/send_group_msg", data = data)
     return response
 
-async def send_guild_channel_msg(guild_id, channel_id, message):
+def send_guild_channel_msg(guild_id, channel_id, message):
     # print(message)
     data = {
         "guild_id":guild_id,
         "channel_id":channel_id,
         "message":message
     }
-    response = requests.post("http://127.0.0.1:5700/send_guild_channel_msg", data = data)
+    response = requests.post("http://127.0.0.1:5700/send_guild_channel_msg", data = data, headers={'Connection':'close'})
     return response
-    
+
+def send_guild_channel_msg(message):
+    # print(message)
+    response = requests.post("http://127.0.0.1:5700/send_guild_channel_msg", data = message, headers={'Connection':'close'})
+    return response
+
+def put_guild_channel_msg(guild_id, channel_id, message):
+    # print(message)
+    data = {
+        "guild_id":guild_id,
+        "channel_id":channel_id,
+        "message":message
+    }
+    messageQueue.put(data)
+
+def messageSender():
+    while True:
+        message = messageQueue.get(block = True, timeout = None)
+        send_guild_channel_msg(message)
+        messageQueue.task_done()
 
 async def main():
+    global messageQueue
+    messageQueue = queue.Queue(maxsize=-1) # infinity length
+    senderThread = threading.Thread(target = messageSender)
+    senderThread.start()
     await run_single_client()
     scheduler = AsyncIOScheduler()
     scheduler.add_job(ListenWeibo, 'interval', seconds=61)
@@ -70,8 +96,9 @@ async def ListenWeibo():
         if(wb_content):
             for content in wb_content:
                 # await send_qq_group_msg(271216120, content)
-                await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
-                print('微博内容：'+content)
+                # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
+                put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
+                print('微博内容：' + content)
 
 def get_live_room_id(mid):
     res = requests.get('https://api.bilibili.com/x/space/acc/info?mid='+str(mid)+'&jsonp=jsonp')
@@ -93,8 +120,9 @@ async def ListenLive():
         live_status = GetLiveStatus(roomid)
         if(live_status):
             print(bili_name_list[i] + '开播啦！\r\n直播间标题：' + live_status)
-            await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, bili_name_list[i] + '开播啦！\r\n直播间标题：' + live_status)
-        
+            # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, bili_name_list[i] + '开播啦！\r\n直播间标题：' + live_status)
+            put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, bili_name_list[i] + '开播啦！\r\n直播间标题：' + live_status)
+
 def GetLiveStatus(uid):
     res = requests.get('https://api.live.bilibili.com/room/v1/Room/get_info?device=phone&;platform=ios&scale=3&build=10000&room_id=' + str(uid))
     #res = requests.get('https://api.live.bilibili.com/AppRoom/msg?room_id='+str(uid))
@@ -130,7 +158,8 @@ async def ListenDynamic():
     for i in range(len(bili_uid_list)):
         dynamic_content = GetDynamicStatus(bili_uid_list[i], i)
         for content in dynamic_content:
-            await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
+            # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
+            put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
             print('动态内容：' + content)
 
 def GetDynamicStatus(uid, biliindex):
@@ -274,8 +303,9 @@ class MyHandler(blivedm.BaseHandler):
 
     async def _on_super_chat(self, client: blivedm.BLiveClient, message: blivedm.SuperChatMessage):
         print(f'[{client.room_id}] 醒目留言 ¥{message.price} {message.uname}：{message.message}')
-        await send_guild_channel_msg(49857441636955271, sc_notify_channel, f'醒目留言 ¥{message.price} {message.uname}：{message.message}')
-
+        # await send_guild_channel_msg(49857441636955271, sc_notify_channel, f'醒目留言 ¥{message.price} {message.uname}：{message.message}')
+        put_guild_channel_msg(49857441636955271, sc_notify_channel, f'醒目留言 ¥{message.price} {message.uname}：{message.message}')
+        
 # 1405112 直播讨论
 # 1405378 七海动态
 # 1392788 综合交流1区
