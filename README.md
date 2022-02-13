@@ -1,10 +1,8 @@
 # Nana7mi_Monitor
----
 ## 感谢
 - QQBot_bilibili https://github.com/wxz97121/QQBot_bilibili
 - blivedm https://github.com/xfgryujk/blivedm
 - go-cqhttp https://github.com/Mrs4s/go-cqhttp
----
 ## 使用
 ### 需求
 - go-cqhttp
