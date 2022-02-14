@@ -8,6 +8,7 @@ import time
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import threading
 import queue
+import os
 from time import sleep
 
 import blivedm
@@ -64,10 +65,29 @@ def put_guild_channel_msg(guild_id, channel_id, message):
     }
     messageQueue.put(data)
 
+def messageSend(message):
+    try:
+        response = send_guild_channel_msg(message)
+    except:
+        print('消息发送失败，添加空格重试')
+        sleep(0.03)
+        message['message'] = message['message'] + ' '
+        try:
+            response = send_guild_channel_msg(message)
+        except:
+            print('消息发送失败，内容：' + message['message'])
+            f = open('FailedMessage','w')
+            f.write(message['message'] + '\n')
+            f.close()
+            sleep(0.01)
+            os._exit(-1)
+            
+
 def messageSender():
     while True:
         message = messageQueue.get(block = True, timeout = None)
-        send_guild_channel_msg(message)
+        messageSend(message)
+        sleep(0.03)
         messageQueue.task_done()
 
 async def main():
@@ -119,9 +139,9 @@ async def ListenLive():
         roomid = get_live_room_id(bili_uid_list[i])
         live_status = GetLiveStatus(roomid)
         if(live_status):
-            print(bili_name_list[i] + '开播啦！\r\n直播间标题：' + live_status)
-            # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, bili_name_list[i] + '开播啦！\r\n直播间标题：' + live_status)
-            put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, bili_name_list[i] + '开播啦！\r\n直播间标题：' + live_status)
+            print(bili_name_list[i] + '开播啦！\n直播间标题：' + live_status)
+            # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, bili_name_list[i] + '开播啦！\n直播间标题：' + live_status)
+            put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, bili_name_list[i] + '开播啦！\n直播间标题：' + live_status)
 
 def GetLiveStatus(uid):
     res = requests.get('https://api.live.bilibili.com/room/v1/Room/get_info?device=phone&;platform=ios&scale=3&build=10000&room_id=' + str(uid))
@@ -174,46 +194,36 @@ def GetDynamicStatus(uid, biliindex):
     except:
         exit()
     print('Success get')
-    try:
-        with open(str(uid)+'Dynamic','r') as f:
-            last_dynamic_str = f.read()
-            f.close()
-    except Exception as err:
-        last_dynamic_str=''
-        pass
-    if last_dynamic_str == '':
-        last_dynamic_str = cards_data[1]['desc']['dynamic_id_str']
-    print('last_dynamic_str: '+last_dynamic_str)
     index = 0
     content_list=[]
     cards_data[0]['card'] = json.loads(cards_data[0]['card'],encoding='gb2312')
     nowtime = time.time().__int__()
     # card是字符串，需要重新解析
-    while last_dynamic_str != cards_data[index]['desc']['dynamic_id_str']:
+    while index < len(cards_data):
         #print(cards_data[index]['desc'])
         try:
             # print('nowtime: ' + str(nowtime))
             # print('timestamp: ' + str(cards_data[index]['desc']['timestamp']))
             content = []
-            if nowtime - cards_data[index]['desc']['timestamp'] > 59000000:
+            if nowtime - cards_data[index]['desc']['timestamp'] > 59:
                 break
             if (cards_data[index]['desc']['type'] == 64):
                 content.append(bili_name_list[biliindex] +'发了新专栏「'+ cards_data[index]['card']['title'] + '」并说： ' +cards_data[index]['card']['dynamic'])
-                content.append('\r\n')
+                content.append('\n')
             else:
                 if (cards_data[index]['desc']['type'] == 8):
                     content.append(bili_name_list[biliindex] + '发了新视频「'+ cards_data[index]['card']['title'] + '」并说： ' +cards_data[index]['card']['dynamic'])
-                    content.append('\r\n')
+                    content.append('\n')
                 else:         
                     if ('description' in cards_data[index]['card']['item']):
                         #这个是带图新动态
                         content.append(bili_name_list[biliindex] + '发了新动态： ' +cards_data[index]['card']['item']['description'])
-                        content.append('\r\n')
+                        content.append('\n')
                         #print('Fuck')
                         #CQ使用参考：[CQ:image,file=http://i1.piimg.com/567571/fdd6e7b6d93f1ef0.jpg]
                         for pic_info in cards_data[index]['card']['item']['pictures']:
                             content.append('[CQ:image,file='+pic_info['img_src']+']')
-                            content.append('\r\n')
+                            content.append('\n')
                     else:
                         #这个表示转发，原动态的信息在 cards-item-origin里面。里面又是一个超级长的字符串……
                         #origin = json.loads(cards_data[index]['card']['item']['origin'],encoding='gb2312') 我也不知道这能不能解析，没试过
@@ -221,11 +231,11 @@ def GetDynamicStatus(uid, biliindex):
                         if 'origin_user' in cards_data[index]['card']:
                             origin_name = cards_data[index]['card']['origin_user']['info']['uname']
                             content.append(bili_name_list[biliindex]+ '转发了「'+ origin_name + '」的动态并说： ' +cards_data[index]['card']['item']['content'])
-                            content.append('\r\n')
+                            content.append('\n')
                         else:
                             #这个是不带图的自己发的动态
                             content_list.append(bili_name_list[biliindex]+ '发了新动态： ' +cards_data[index]['card']['item']['content'])
-                            content.append('\r\n')
+                            content.append('\n')
             content.append('本条动态地址为'+'https://t.bilibili.com/'+ cards_data[index]['desc']['dynamic_id_str'])
             content_list.append(''.join(content))
         except Exception as err:
@@ -237,9 +247,6 @@ def GetDynamicStatus(uid, biliindex):
         if len(cards_data) == index:
             break
         cards_data[index]['card'] = json.loads(cards_data[index]['card'])
-    f = open(str(uid)+'Dynamic','w')
-    f.write(cards_data[0]['desc']['dynamic_id_str'])
-    f.close()
     return content_list
 
 
@@ -302,6 +309,7 @@ class MyHandler(blivedm.BaseHandler):
         print(f'[{client.room_id}] {message.username} 购买{message.gift_name}')
 
     async def _on_super_chat(self, client: blivedm.BLiveClient, message: blivedm.SuperChatMessage):
+        # print(f" - $ $ $ - \n「`七海Nana7mi`收到了`{message.uname}`发送了{message.price}块 SC:`{message.message}`」")
         print(f'[{client.room_id}] 醒目留言 ¥{message.price} {message.uname}：{message.message}')
         # await send_guild_channel_msg(49857441636955271, sc_notify_channel, f'醒目留言 ¥{message.price} {message.uname}：{message.message}')
         put_guild_channel_msg(49857441636955271, sc_notify_channel, f'醒目留言 ¥{message.price} {message.uname}：{message.message}')
@@ -309,6 +317,7 @@ class MyHandler(blivedm.BaseHandler):
 # 1405112 直播讨论
 # 1405378 七海动态
 # 1392788 综合交流1区
+# 1691384 综合交流2区
 # 1407656 其它vtb相关
 
 def get_long_weibo( id):
@@ -408,7 +417,7 @@ def GetWeibo(uid, wbindex):
                 weibo_avatar = w['mblog']['user']['avatar_hd']
                 weibo_istop = w['mblog'].get('isTop')
                 content = ['[CQ:image,file='+weibo_avatar+']']
-                content.append('\r\n')
+                content.append('\n')
                 created_time = get_created_time(w['mblog']['created_at'])
                 if weibo_istop and weibo_istop == 1:
                     continue
@@ -431,11 +440,11 @@ def GetWeibo(uid, wbindex):
                         retweet = parse_weibo(retweeted_status)
                     weibo['retweet'] = retweet
                     content.append(wb_name_list[wbindex] + '在' + created_time.strftime("%Y-%m-%d %H:%M:%S") + '转发了微博并说：')
-                    content.append('\r\n')
+                    content.append('\n')
                     content.append(weibo['text'])
-                    content.append('\r\n')
+                    content.append('\n')
                     content.append('原微博：'+weibo['retweet']['text'])
-                    content.append('\r\n')
+                    content.append('\n')
                     content.append('本条微博地址是：' + weibo_url)
                     
                 else:  # 原创
@@ -446,9 +455,9 @@ def GetWeibo(uid, wbindex):
                     else:
                         weibo = parse_weibo(w['mblog'])
                     content.append(wb_name_list[wbindex] + '在' + created_time.strftime("%Y-%m-%d %H:%M:%S") + '发了新微博并说：')
-                    content.append('\r\n')
+                    content.append('\n')
                     content.append(weibo['text'])
-                    content.append('\r\n')
+                    content.append('\n')
                     content.append('本条微博地址是：' + weibo_url)
                     for pic_info in weibo['pics']:
                         content.append('[CQ:image,file='+pic_info+']')
