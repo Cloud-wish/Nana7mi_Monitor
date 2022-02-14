@@ -5,10 +5,11 @@
 - go-cqhttp https://github.com/Mrs4s/go-cqhttp
 ## 使用
 ### 需求
+- Python 3.8
 - go-cqhttp
 - blivedm
 
-直接运行脚本即可
+直接运行starter.py即可
 
 ---
 第一次写Python，基本语法都是现查的，勉强能实现效果。如果有时间会更新功能的，Bug尽量及时修复。
