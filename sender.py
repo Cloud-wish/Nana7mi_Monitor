@@ -13,7 +13,6 @@ import sys
 from time import sleep
 
 def send_guild_channel_msg(message):
-    # print(message['message'])
     response = requests.post("http://127.0.0.1:5700/send_guild_channel_msg", data = message, headers={'Connection':'close'})
     return response
 
@@ -26,6 +25,7 @@ def messageSend():
     try:
         response = send_guild_channel_msg(message)
     except:
+        print(str(response))
         os._exit(-1)
             
 if __name__ == '__main__':

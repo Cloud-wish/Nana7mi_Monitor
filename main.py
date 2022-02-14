@@ -108,18 +108,17 @@ def pictureTransform(message):
     for content in toRemove:
         message.remove(content)
     toPicture = ''.join(toPicture)
-    toPicture = textwrap.fill(text = toPicture, width = 20)
+    toPicture = textwrap.fill(text = toPicture, width = 20 ,drop_whitespace = False, replace_whitespace = False)
     img = Image.new(mode = 'RGB', size=(330, 10 + (22) * (toPicture.count('\n') + 1)), color = (255, 255, 255))
     draw = ImageDraw.Draw(img)
     draw.text(xy=(5,5), text=toPicture, font=font, fill=(0,0,0,255))
-    img.save('output.png')
-    message.insert(begLen, '[CQ:image,file=output.png]')
+    img.save('D:\\output.png')
+    message.insert(begLen, '[CQ:image,file=file:///D:\\output.png]')
 
 def messageSender():
     while True:
         message = messageQueue.get(block = True, timeout = None)
         try:
-            raise Exception('test')
             run("python sender.py " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(message['message'])+'"', check=True)
         except:
             print('消息发送失败，尝试转换为图片')
@@ -130,7 +129,7 @@ def messageSender():
                 run("python sender.py " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(toMessage) +'"', check=True)
             except:
                 print('该消息无法发送，已记录')
-                f = open('FailedMessage','a')
+                f = open('FailedMessage','a', encoding = 'UTF-8')
                 f.write(originalMessage + '\n')
                 f.close()
         sleep(0.03)
@@ -164,7 +163,7 @@ async def ListenWeibo():
                 # await send_qq_group_msg(271216120, content)
                 # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
                 put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
-                print('微博内容：' + content)
+                print('微博内容：' + ''.join(content))
 
 def get_live_room_id(mid):
     res = requests.get('https://api.bilibili.com/x/space/acc/info?mid='+str(mid)+'&jsonp=jsonp')
@@ -227,7 +226,7 @@ async def ListenDynamic():
         for content in dynamic_content:
             # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
             put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
-            print('动态内容：' + content)
+            print('动态内容：' + ''.join(content))
 
 def GetDynamicStatus(uid, biliindex):
     #print('Debug uid  '+str(uid))
@@ -370,10 +369,11 @@ class MyHandler(blivedm.BaseHandler):
 # 1691384 综合交流2区
 # 1407656 其它vtb相关
 
-def get_long_weibo( id):
+def get_long_weibo(weibo_id):
     """获取长微博"""
-    for i in range(5):
-        url = 'https://m.weibo.cn/detail/%s' % id
+    for i in range(3):
+        url = 'https://m.weibo.cn/detail/' + weibo_id
+        print('url: '+url)
         html = requests.get(url).text
         html = html[html.find('"status":'):]
         html = html[:html.rfind('"hotScheme"')]
@@ -383,8 +383,13 @@ def get_long_weibo( id):
         weibo_info = js.get('status')
         if weibo_info:
             weibo = parse_weibo(weibo_info)
+            #截短长微博
+            if(len(weibo['text']) > 100):
+                weibo['text'] = weibo['text'][0:47] + "..."
+            print('after cut: ' + weibo['text'])
             return weibo
         time.sleep(random.randint(6, 10))
+
 
 def parse_weibo(weibo_info):
     weibo = collections.OrderedDict()
