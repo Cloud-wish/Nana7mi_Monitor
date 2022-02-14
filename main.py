@@ -10,8 +10,16 @@ import threading
 import queue
 import os
 from time import sleep
+from subprocess import run
+
+from PIL import Image, ImageFont, ImageDraw
+import textwrap
 
 import blivedm
+
+# 微软雅黑的字体
+path_to_ttf = r'c:\windows\font\msyh.ttc'
+font = ImageFont.truetype(path_to_ttf, size=16, encoding='unic')
 
 # 直播间ID的取值看直播间URL
 TEST_ROOM_IDS = [
@@ -65,6 +73,7 @@ def put_guild_channel_msg(guild_id, channel_id, message):
     }
     messageQueue.put(data)
 
+"""
 def messageSend(message):
     try:
         response = send_guild_channel_msg(message)
@@ -76,17 +85,54 @@ def messageSend(message):
             response = send_guild_channel_msg(message)
         except:
             print('消息发送失败，内容：' + message['message'])
-            f = open('FailedMessage','w')
+            f = open('FailedMessage','a')
             f.write(message['message'] + '\n')
             f.close()
             sleep(0.01)
             os._exit(-1)
-            
+"""
+
+# 一个中文字大小为16x16
+def pictureTransform(message):
+    toPicture = []
+    toRemove = []
+    begLen = 0
+    isBeg = True
+    for content in message:
+        if(content.startswith('[') == False):
+            isBeg = False
+            toPicture.append(content)
+            toRemove.append(content)
+        elif(isBeg == True):
+            begLen = begLen + 1
+    for content in toRemove:
+        message.remove(content)
+    toPicture = ''.join(toPicture)
+    toPicture = textwrap.fill(text = toPicture, width = 20)
+    img = Image.new(mode = 'RGB', size=(330, 10 + (22) * (toPicture.count('\n') + 1)), color = (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    draw.text(xy=(5,5), text=toPicture, font=font, fill=(0,0,0,255))
+    img.save('output.png')
+    message.insert(begLen, '[CQ:image,file=output.png]')
 
 def messageSender():
     while True:
         message = messageQueue.get(block = True, timeout = None)
-        messageSend(message)
+        try:
+            raise Exception('test')
+            run("python sender.py " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(message['message'])+'"', check=True)
+        except:
+            print('消息发送失败，尝试转换为图片')
+            originalMessage = ''.join(message['message'])
+            toMessage = message['message']
+            pictureTransform(toMessage)
+            try:
+                run("python sender.py " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(toMessage) +'"', check=True)
+            except:
+                print('该消息无法发送，已记录')
+                f = open('FailedMessage','a')
+                f.write(originalMessage + '\n')
+                f.close()
         sleep(0.03)
         messageQueue.task_done()
 
@@ -139,9 +185,10 @@ async def ListenLive():
         roomid = get_live_room_id(bili_uid_list[i])
         live_status = GetLiveStatus(roomid)
         if(live_status):
-            print(bili_name_list[i] + '开播啦！\n直播间标题：' + live_status)
+            content = [bili_name_list[i] + '开播啦！\n直播间标题：' + live_status]
+            print(content[0])
             # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, bili_name_list[i] + '开播啦！\n直播间标题：' + live_status)
-            put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, bili_name_list[i] + '开播啦！\n直播间标题：' + live_status)
+            put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
 
 def GetLiveStatus(uid):
     res = requests.get('https://api.live.bilibili.com/room/v1/Room/get_info?device=phone&;platform=ios&scale=3&build=10000&room_id=' + str(uid))
@@ -237,7 +284,7 @@ def GetDynamicStatus(uid, biliindex):
                             content_list.append(bili_name_list[biliindex]+ '发了新动态： ' +cards_data[index]['card']['item']['content'])
                             content.append('\n')
             content.append('本条动态地址为'+'https://t.bilibili.com/'+ cards_data[index]['desc']['dynamic_id_str'])
-            content_list.append(''.join(content))
+            content_list.append(content)
         except Exception as err:
                 print('PROCESS ERROR')
                 print(str(err))
@@ -294,6 +341,8 @@ class MyHandler(blivedm.BaseHandler):
     async def _on_heartbeat(self, client: blivedm.BLiveClient, message: blivedm.HeartbeatMessage):
         print(f'[{client.room_id}] 当前人气值：{message.popularity}')
         # await send_qq_group_msg(271216120, f'[{client.room_id}] 当前人气值：{message.popularity}')
+        # content = [f'当前人气值：{message.popularity}']
+        # put_guild_channel_msg(49857441636955271, sc_notify_channel, content)
 
     """
     async def _on_danmaku(self, client: blivedm.BLiveClient, message: blivedm.DanmakuMessage):
@@ -310,9 +359,10 @@ class MyHandler(blivedm.BaseHandler):
 
     async def _on_super_chat(self, client: blivedm.BLiveClient, message: blivedm.SuperChatMessage):
         # print(f" - $ $ $ - \n「`七海Nana7mi`收到了`{message.uname}`发送了{message.price}块 SC:`{message.message}`」")
+        content = [f'醒目留言 ¥{message.price} {message.uname}：{message.message}']
         print(f'[{client.room_id}] 醒目留言 ¥{message.price} {message.uname}：{message.message}')
         # await send_guild_channel_msg(49857441636955271, sc_notify_channel, f'醒目留言 ¥{message.price} {message.uname}：{message.message}')
-        put_guild_channel_msg(49857441636955271, sc_notify_channel, f'醒目留言 ¥{message.price} {message.uname}：{message.message}')
+        put_guild_channel_msg(49857441636955271, sc_notify_channel, content)
         
 # 1405112 直播讨论
 # 1405378 七海动态
@@ -461,7 +511,7 @@ def GetWeibo(uid, wbindex):
                     content.append('本条微博地址是：' + weibo_url)
                     for pic_info in weibo['pics']:
                         content.append('[CQ:image,file='+pic_info+']')
-                content_list.append(''.join(content))
+                content_list.append(content)
     return content_list
 
 if __name__ == '__main__':
