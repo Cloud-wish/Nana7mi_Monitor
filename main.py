@@ -34,11 +34,14 @@ wb_name_list=['海海']
 bili_uid_list=[434334701]
 bili_name_list=['海海']
 
+danmaku_monitor_uid_list=[7706705, 14387072]
+
 # 3215377 SC动态
 # 3215378 微博/直播动态
 
 sc_notify_channel = 3215377
 nana7mi_notify_channel = 3215378
+live_discuss_channel = 1405112
 
 async def send_qq_group_msg(group_id, message):
     data = {
@@ -118,6 +121,7 @@ def pictureTransform(message):
 def messageSender():
     while True:
         message = messageQueue.get(block = True, timeout = None)
+        
         try:
             run("python sender.py " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(message['message'])+'"', check=True)
         except:
@@ -132,15 +136,24 @@ def messageSender():
                 f = open('FailedMessage','a', encoding = 'UTF-8')
                 f.write(originalMessage + '\n')
                 f.close()
+        
         sleep(0.03)
         messageQueue.task_done()
 
 async def main():
     global messageQueue
     messageQueue = queue.Queue(maxsize=-1) # infinity length
+    
     senderThread = threading.Thread(target = messageSender)
     senderThread.start()
+    
     await run_single_client()
+
+    global last_weibo_id
+    last_weibo_id = ''
+    global last_dynamic_id
+    last_dynamic_id = ''
+    
     scheduler = AsyncIOScheduler()
     scheduler.add_job(ListenWeibo, 'interval', seconds=61)
     scheduler.add_job(ListenLive, 'interval', seconds=37)
@@ -230,7 +243,12 @@ async def ListenDynamic():
 
 def GetDynamicStatus(uid, biliindex):
     #print('Debug uid  '+str(uid))
-    res = requests.get('https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/space_history?host_uid='+str(uid)+'&offset_dynamic_id=0')
+    global last_dynamic_id
+    print('last_dynamic_id:'+last_dynamic_id)
+    headers = {
+        'Referer': 'https://space.bilibili.com/{user_uid}/'.format(user_uid=uid)
+    }
+    res = requests.get('https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/space_history?host_uid='+str(uid)+'&offset_dynamic_id=0', headers=headers)
     res.encoding='utf-8'
     res = res.text
     #res = res.encode('utf-8')
@@ -239,19 +257,28 @@ def GetDynamicStatus(uid, biliindex):
         cards_data = cards_data['data']['cards']
     except:
         exit()
-    print('Success get')
+    # print('Success get')
     index = 0
     content_list=[]
     cards_data[0]['card'] = json.loads(cards_data[0]['card'],encoding='gb2312')
     nowtime = time.time().__int__()
+
+    now_dynamic_id = ''
     # card是字符串，需要重新解析
     while index < len(cards_data):
         #print(cards_data[index]['desc'])
         try:
+            dynamic_id = cards_data[index]['desc']['dynamic_id_str']
+
+            # 记录最新一条动态id
+            if now_dynamic_id == '':
+                now_dynamic_id = dynamic_id
             # print('nowtime: ' + str(nowtime))
             # print('timestamp: ' + str(cards_data[index]['desc']['timestamp']))
             content = []
-            if nowtime - cards_data[index]['desc']['timestamp'] > 59:
+            if nowtime - cards_data[index]['desc']['timestamp'] > 69:
+                break
+            if last_dynamic_id == dynamic_id:
                 break
             if (cards_data[index]['desc']['type'] == 64):
                 content.append(bili_name_list[biliindex] +'发了新专栏「'+ cards_data[index]['card']['title'] + '」并说： ' +cards_data[index]['card']['dynamic'])
@@ -292,7 +319,11 @@ def GetDynamicStatus(uid, biliindex):
         index += 1
         if len(cards_data) == index:
             break
-        cards_data[index]['card'] = json.loads(cards_data[index]['card'])
+        cards_data[index]['card'] = json.loads(cards_data[index]['card']) # 加载下一条动态
+    # 更新last_dynamic_id
+    print('now_dynamic_id:'+now_dynamic_id)
+    if now_dynamic_id != '':
+        last_dynamic_id = now_dynamic_id
     return content_list
 
 
@@ -343,11 +374,19 @@ class MyHandler(blivedm.BaseHandler):
         # content = [f'当前人气值：{message.popularity}']
         # put_guild_channel_msg(49857441636955271, sc_notify_channel, content)
 
-    """
     async def _on_danmaku(self, client: blivedm.BLiveClient, message: blivedm.DanmakuMessage):
-        print(f'[{client.room_id}] {message.uname}：{message.msg}')
+        # print(f'[{client.room_id}] {message.uname}：{message.msg}')
+        if(danmaku_monitor_uid_list.count(message.uid) > 0):
+            content = [f'{message.uname}在海海直播间发送了弹幕：{message.msg}']
+            print(content[0])
+            put_guild_channel_msg(49857441636955271, live_discuss_channel, content)
+        elif(message.uid == 434334701):
+            content = [f'{message.uname}在直播间发送了弹幕：{message.msg}']
+            print(content[0])
+            put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
         # await send_qq_group_msg(271216120, f'[{client.room_id}] {message.uname}：{message.msg}')
 
+    """
     async def _on_gift(self, client: blivedm.BLiveClient, message: blivedm.GiftMessage):
         print(f'[{client.room_id}] {message.uname} 赠送{message.gift_name}x{message.num}'
               f' （{message.coin_type}瓜子x{message.total_coin}）')
@@ -385,7 +424,7 @@ def get_long_weibo(weibo_id):
             weibo = parse_weibo(weibo_info)
             #截短长微博
             if(len(weibo['text']) > 100):
-                weibo['text'] = weibo['text'][0:47] + "..."
+                weibo['text'] = weibo['text'][0:97] + "..."
             print('after cut: ' + weibo['text'])
             return weibo
         time.sleep(random.randint(6, 10))
@@ -453,6 +492,8 @@ def get_created_time(created_at):
     return created_at
 
 def GetWeibo(uid, wbindex):
+    global last_weibo_id
+    print('last_weibo_id:'+last_weibo_id)
     content_list=[]
     params = {
         'containerid': '107603' + str(uid)
@@ -463,21 +504,33 @@ def GetWeibo(uid, wbindex):
     res = r.json()
     if res['ok']:
         weibos = res['data']['cards']
+        now_weibo_id = ''
         for w in weibos:
             if w['card_type'] == 9:
                 retweeted_status = w['mblog'].get('retweeted_status')
                 is_long = w['mblog'].get('isLongText')
                 weibo_id = w['mblog']['id']
+                
                 weibo_url = w['scheme']
                 weibo_avatar = w['mblog']['user']['avatar_hd']
                 weibo_istop = w['mblog'].get('isTop')
                 content = ['[CQ:image,file='+weibo_avatar+']']
                 content.append('\n')
                 created_time = get_created_time(w['mblog']['created_at'])
+                
                 if weibo_istop and weibo_istop == 1:
-                    continue
-                if datetime.now() - created_time > timedelta(seconds = 59):
-                   break
+                    # 如果置顶微博在上一次查询之后发出，则需要发送
+                    if datetime.now() - created_time > timedelta(seconds = 69):
+                        continue
+                else:
+                    # 记录除置顶以外最新一条微博id
+                    if now_weibo_id == '':
+                        now_weibo_id = weibo_id
+                    
+                if datetime.now() - created_time > timedelta(seconds = 69):
+                    break
+                if last_weibo_id == weibo_id:
+                    break;
                 if retweeted_status and retweeted_status.get('id'):  # 转发
                     retweet_id = retweeted_status.get('id')
                     is_long_retweet = retweeted_status.get('isLongText')
@@ -517,6 +570,10 @@ def GetWeibo(uid, wbindex):
                     for pic_info in weibo['pics']:
                         content.append('[CQ:image,file='+pic_info+']')
                 content_list.append(content)
+    print('now_weibo_id:'+now_weibo_id)
+    # 更新last_weibo_id
+    if now_weibo_id != '':
+        last_weibo_id = now_weibo_id
     return content_list
 
 if __name__ == '__main__':

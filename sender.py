@@ -30,4 +30,3 @@ def messageSend():
             
 if __name__ == '__main__':
     messageSend()
-    sleep(3)
