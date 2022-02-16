@@ -3,7 +3,7 @@ from datetime import datetime,date,timedelta
 import random
 import requests
 import json,collections,xml
-from lxml import etree
+from bs4 import BeautifulSoup
 import time
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import threading
@@ -30,6 +30,8 @@ TEST_ROOM_ID = 21452505
 
 wb_uid_list=[7198559139]
 wb_name_list=['海海']
+wb_cookie = ''
+wb_ua = ''
 
 bili_uid_list=[434334701]
 bili_name_list=['海海']
@@ -140,6 +142,25 @@ def messageSender():
         sleep(0.03)
         messageQueue.task_done()
 
+def read_config():
+    global wb_cookie
+    global wb_ua
+    try:
+        with open('weibo_cookie.txt','r', encoding = 'UTF-8') as f:
+            wb_cookie = f.read()
+            f.close()
+    except Exception as err:
+            wb_cookie = ''
+            pass
+    try:
+        with open('weibo_ua.txt','r', encoding = 'UTF-8') as f:
+            wb_ua = f.read()
+            f.close()
+    except Exception as err:
+            wb_ua = ''
+            pass
+
+
 async def main():
     global messageQueue
     messageQueue = queue.Queue(maxsize=-1) # infinity length
@@ -149,21 +170,29 @@ async def main():
     
     await run_single_client()
 
-    global last_weibo_id
-    last_weibo_id = ''
+    global last_weibo_time
+    last_weibo_time = datetime.now()
+    global last_comment_time
+    last_comment_time = datetime.now()
     global last_dynamic_id
     last_dynamic_id = ''
+
+    global wb_cookie
+    global wb_ua
+    read_config()
+    print('wb_cookie:'+wb_cookie)
+    print('wb_ua:'+wb_ua)
     
     scheduler = AsyncIOScheduler()
     scheduler.add_job(ListenWeibo, 'interval', seconds=61)
     scheduler.add_job(ListenLive, 'interval', seconds=37)
-    scheduler.add_job(ListenDynamic, 'interval', seconds=61)
+    scheduler.add_job(ListenDynamic, 'interval', seconds=63)
     scheduler.start()
 
 async def ListenWeibo():
     print('查询微博动态...')
     for i in range(min(len(wb_uid_list),len(wb_name_list))):
-        wb_content = GetWeibo(wb_uid_list[i], i)
+        wb_content = await GetWeibo(wb_uid_list[i], i)
         """
         content = '\n'.join(wb_content)
         if(content != ''):
@@ -173,7 +202,6 @@ async def ListenWeibo():
         """
         if(wb_content):
             for content in wb_content:
-                # await send_qq_group_msg(271216120, content)
                 # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
                 put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
                 print('微博内容：' + ''.join(content))
@@ -370,7 +398,6 @@ class MyHandler(blivedm.BaseHandler):
     
     async def _on_heartbeat(self, client: blivedm.BLiveClient, message: blivedm.HeartbeatMessage):
         print(f'[{client.room_id}] 当前人气值：{message.popularity}')
-        # await send_qq_group_msg(271216120, f'[{client.room_id}] 当前人气值：{message.popularity}')
         # content = [f'当前人气值：{message.popularity}']
         # put_guild_channel_msg(49857441636955271, sc_notify_channel, content)
 
@@ -384,8 +411,7 @@ class MyHandler(blivedm.BaseHandler):
             content = [f'{message.uname}在直播间发送了弹幕：{message.msg}']
             print(content[0])
             put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
-        # await send_qq_group_msg(271216120, f'[{client.room_id}] {message.uname}：{message.msg}')
-
+        
     """
     async def _on_gift(self, client: blivedm.BLiveClient, message: blivedm.GiftMessage):
         print(f'[{client.room_id}] {message.uname} 赠送{message.gift_name}x{message.num}'
@@ -408,12 +434,12 @@ class MyHandler(blivedm.BaseHandler):
 # 1691384 综合交流2区
 # 1407656 其它vtb相关
 
-def get_long_weibo(weibo_id):
+def get_long_weibo(weibo_id, headers):
     """获取长微博"""
     for i in range(3):
         url = 'https://m.weibo.cn/detail/' + weibo_id
         print('url: '+url)
-        html = requests.get(url).text
+        html = requests.get(url, headers = headers).text
         html = html[html.find('"status":'):]
         html = html[:html.rfind('"hotScheme"')]
         html = html[:html.rfind(',')]
@@ -439,23 +465,11 @@ def parse_weibo(weibo_info):
         weibo['user_id'] = ''
         weibo['screen_name'] = ''
 
-    text_body = weibo_info['text']
-    selector = etree.HTML(text_body)
-    weibo['text'] = etree.HTML(text_body).xpath('string(.)')
-    weibo['article_url'] = get_article_url(selector)
+    weibo['text'] = parse_text(weibo_info['text'])
+
     weibo['pics'] = get_pics(weibo_info)
     #return standardize_info(weibo)
     return weibo
-
-def get_article_url(selector):
-    """获取微博中头条文章的url"""
-    article_url = ''
-    text = selector.xpath('string(.)')
-    if text.startswith(u'发布了头条文章'):
-        url = selector.xpath('//a/@data-url')
-        if url and url[0].startswith('http://t.cn'):
-            article_url = url[0]
-    return article_url
 
 def get_pics(weibo_info):
     """获取微博原始图片url"""
@@ -491,57 +505,180 @@ def get_created_time(created_at):
     # print(created_at)
     return created_at
 
-def GetWeibo(uid, wbindex):
-    global last_weibo_id
-    print('last_weibo_id:'+last_weibo_id)
+def parse_text(wb_text):
+    wb_soup = BeautifulSoup(wb_text, features="lxml")
+    # print(wb_soup)
+
+    all_a = wb_soup.findAll('a')
+    pic_list = []
+    for a in all_a:
+        # print('a:'+str(a))
+        pic_link = a.get('data-url')
+        if pic_link == None:
+            pic_link = a.getText()
+            a.replaceWith(pic_link)
+        else:
+            pic_link = pic_link.replace('\\"','')
+            # 判断是否为图片
+            pic_href = a.get('href').replace('\\"','')
+            if pic_href.endswith('.jpg') or pic_href.endswith('.jpeg') or pic_href.endswith('.png') or pic_href.endswith('.gif'):
+                # 写入cq码
+                # print('[CQ:image,file='+pic_link+']')
+                pic_list.append('[CQ:image,file='+pic_link+']')
+                a.extract()
+            else: # 不是图片
+                a.replaceWith(pic_link)
+                
+
+    all_img = wb_soup.findAll('img')
+    for img in all_img:
+        img_desc = img.get('alt')
+        if img_desc == None:
+            img_desc = img.getText()
+        img.replaceWith(img_desc)
+
+    return wb_soup.getText() + '\n' + ''.join(pic_list)
+
+# 记录下最晚一条被发送的评论的时间
+# 爬取按热度排序的第一页评论，如果有符合条件的就发送
+# 爬取评论的楼中楼评论，如果有符合条件的就发送
+async def GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, weibo_url):
+    await asyncio.sleep(random.randint(2, 5))
+    url = 'https://m.weibo.cn/comments/hotflow?'
+    params = {
+        'id': weibo_id,
+        'mid': mid,
+        'max_id_type': '0'
+    }
+    r = requests.get(url, params=params, headers=headers)
+    res = r.json()
+    if res['ok']: # ok为0代表没有评论
+        global last_comment_time
+        comments = res['data']['data']
+        now_comment_time = last_comment_time
+        if not comments:
+            print('no comment')
+            return
+        for comment in comments:
+            # 符合条件的评论，发送并爬取楼中楼
+            # 预先处理，去掉xml
+            comment['text'] = parse_text(comment['text'])
+            
+            comment_created_time = get_created_time(comment['created_at'])
+            if comment['user']['id'] == uid and last_comment_time < comment_created_time:
+                content = []
+                # 更新时间记录
+                if now_comment_time < comment_created_time:
+                    now_comment_time = comment_created_time
+                content.append(wb_name_list[wbindex] + '在' + comment_created_time.strftime("%Y-%m-%d %H:%M:%S") + '发了新评论并说：')
+                content.append('\n')
+                content.append(comment['text'])
+                content.append('\n')
+                content.append('原微博地址：'+weibo_url)
+                content_list.append(content)
+            # 不符合条件的评论，只爬取楼中楼
+            # print(type(comment['comments']))
+            if not comment['comments']: # 是否存在楼中楼
+                continue
+            for inner_comment in comment['comments']:
+                # print(inner_comment)
+                inner_comment_created_time = get_created_time(inner_comment['created_at'])
+                if inner_comment['user']['id'] == uid and last_comment_time < inner_comment_created_time:
+                    content = []
+                    # 更新时间记录
+                    if now_comment_time < inner_comment_created_time:
+                        now_comment_time = inner_comment_created_time
+                    content.append(wb_name_list[wbindex] + '在' + inner_comment_created_time.strftime("%Y-%m-%d %H:%M:%S") + '回复了一条评论并说：')
+                    content.append('\n')
+
+                    # 去除xml
+                    inner_comment['text'] = parse_text(inner_comment['text'])
+                    
+                    content.append(inner_comment['text'])
+                    content.append('\n')
+                    content.append('原评论内容：'+comment['text'])
+                    content.append('\n')
+                    content.append('原微博地址：'+weibo_url)
+                    content_list.append(content)
+        # 更新最晚时间
+        print('now_comment_time:'+now_comment_time.strftime("%Y-%m-%d %H:%M:%S"))
+        last_comment_time = now_comment_time
+    else:
+        print("no comment!")
+    return
+
+async def GetWeibo(uid, wbindex):
+    global last_weibo_time
+    print('last_weibo_time:'+last_weibo_time.strftime("%Y-%m-%d %H:%M:%S"))
+    global last_comment_time
+    print('last_comment_time:'+last_comment_time.strftime("%Y-%m-%d %H:%M:%S"))
     content_list=[]
     params = {
         'containerid': '107603' + str(uid)
     }
     url = 'https://m.weibo.cn/api/container/getIndex?'
+
+    headers = {
+        'Cookie': wb_cookie,
+        'User-Agent': wb_ua
+    }
     
-    r = requests.get(url, params=params)
+    r = requests.get(url, params=params, headers=headers)
     res = r.json()
     if res['ok']:
         weibos = res['data']['cards']
-        now_weibo_id = ''
-        for w in weibos:
+        # 初值
+        now_weibo_time = last_weibo_time
+        for i in range(min(len(weibos), 5)):
+            w = weibos[i]
             if w['card_type'] == 9:
                 retweeted_status = w['mblog'].get('retweeted_status')
                 is_long = w['mblog'].get('isLongText')
                 weibo_id = w['mblog']['id']
+                mid = w['mblog']['mid']
                 
-                weibo_url = w['scheme']
+                weibo_url = 'https://m.weibo.cn/detail/' + weibo_id
                 weibo_avatar = w['mblog']['user']['avatar_hd']
                 weibo_istop = w['mblog'].get('isTop')
                 content = ['[CQ:image,file='+weibo_avatar+']']
                 content.append('\n')
                 created_time = get_created_time(w['mblog']['created_at'])
-                
+                # 保存要插入在content_list中的位置
+                content_index = len(content_list)
+                # 查询楼中楼
+                await GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, weibo_url)
+
+                """
                 if weibo_istop and weibo_istop == 1:
                     # 如果置顶微博在上一次查询之后发出，则需要发送
-                    if datetime.now() - created_time > timedelta(seconds = 69):
+                    if datetime.now() - created_time > timedelta(seconds = 69000):
                         continue
                 else:
                     # 记录除置顶以外最新一条微博id
                     if now_weibo_id == '':
                         now_weibo_id = weibo_id
-                    
-                if datetime.now() - created_time > timedelta(seconds = 69):
+                if datetime.now() - created_time > timedelta(seconds = 69000):
                     break
                 if last_weibo_id == weibo_id:
                     break;
+                """
+                if not (last_weibo_time < created_time): # 不是新微博
+                    continue
+                # 以下是处理新微博的部分
+                # 记录最晚一条微博的时间
+                if now_weibo_time < created_time:
+                    now_weibo_time = created_time
                 if retweeted_status and retweeted_status.get('id'):  # 转发
                     retweet_id = retweeted_status.get('id')
                     is_long_retweet = retweeted_status.get('isLongText')
                     if is_long:
-                        weibo = get_long_weibo(weibo_id)
+                        weibo = get_long_weibo(weibo_id, headers)
                         if not weibo:
                             weibo = parse_weibo(w['mblog'])
                     else:
                         weibo = parse_weibo(w['mblog'])
                     if is_long_retweet:
-                        retweet = get_long_weibo(retweet_id)
+                        retweet = get_long_weibo(retweet_id, headers)
                         if not retweet:
                             retweet = parse_weibo(retweeted_status)
                     else:
@@ -557,7 +694,7 @@ def GetWeibo(uid, wbindex):
                     
                 else:  # 原创
                     if is_long:
-                        weibo = get_long_weibo(weibo_id)
+                        weibo = get_long_weibo(weibo_id, headers)
                         if not weibo:
                             weibo = parse_weibo(w['mblog'])
                     else:
@@ -569,11 +706,10 @@ def GetWeibo(uid, wbindex):
                     content.append('本条微博地址是：' + weibo_url)
                     for pic_info in weibo['pics']:
                         content.append('[CQ:image,file='+pic_info+']')
-                content_list.append(content)
-    print('now_weibo_id:'+now_weibo_id)
-    # 更新last_weibo_id
-    if now_weibo_id != '':
-        last_weibo_id = now_weibo_id
+                content_list.insert(content_index, content)
+    print('now_weibo_time:'+now_weibo_time.strftime("%Y-%m-%d %H:%M:%S"))
+    # 更新last_weibo_time
+    last_weibo_time = now_weibo_time
     return content_list
 
 if __name__ == '__main__':
