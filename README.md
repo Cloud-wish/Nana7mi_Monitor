@@ -14,6 +14,6 @@
 
 ## 注意
 - 请根据自己的系统环境更改字体文件路径和临时图片保存路径！
-- 若要捕获粉丝可见微博，需要在根目录配置Cookie：weibo_cookie.txt Cookie获取方式：github.com/dataabc/weiboSpider/blob/master/docs/cookie.md
+- 若要捕获粉丝可见微博，需要在根目录配置Cookie：weibo_cookie.txt Cookie获取方式：https://github.com/dataabc/weiboSpider/blob/master/docs/cookie.md
 - 建议同时配置weibo_ua.txt
 
