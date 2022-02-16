@@ -5,7 +5,7 @@
 - blivedm https://github.com/xfgryujk/blivedm
 - go-cqhttp https://github.com/Mrs4s/go-cqhttp
 ## 使用
-直接运行main.py即可
+运行main.py即可
 
 ## 需求
 - Python 3.8
@@ -14,4 +14,6 @@
 
 ## 注意
 - 请根据自己的系统环境更改字体文件路径和临时图片保存路径！
+- 若要捕获粉丝可见微博，需要在根目录配置Cookie：weibo_cookie.txt Cookie获取方式：github.com/dataabc/weiboSpider/blob/master/docs/cookie.md
+- 建议同时配置weibo_ua.txt
 
