@@ -117,27 +117,37 @@ def pictureTransform(message):
     img = Image.new(mode = 'RGB', size=(330, 10 + (22) * (toPicture.count('\n') + 1)), color = (255, 255, 255))
     draw = ImageDraw.Draw(img)
     draw.text(xy=(5,5), text=toPicture, font=font, fill=(0,0,0,255))
-    img.save('D:\\output.png')
-    message.insert(begLen, '[CQ:image,file=file:///D:\\output.png]')
+    img.save('C:\\TempPic\\output.png')
+    message.insert(begLen, '[CQ:image,file=file:///C:\\TempPic\\output.png]')
 
 def messageSender():
     while True:
         message = messageQueue.get(block = True, timeout = None)
         
         try:
-            run("python sender.py " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(message['message'])+'"', check=True)
+            run("python sender.pyw " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(message['message'])+'"', check=True)
         except:
-            print('消息发送失败，尝试转换为图片')
-            originalMessage = ''.join(message['message'])
-            toMessage = message['message']
-            pictureTransform(toMessage)
+            print('消息发送失败，尝试加空格')
+            i = len(message['message']) - 1
+            while i >= 0:
+                if(message['message'][i].startswith('[') == False):
+                    message['message'][i] = message['message'][i] + ' '
+                    break
+                i = i - 1
             try:
-                run("python sender.py " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(toMessage) +'"', check=True)
+                run("python sender.pyw " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(message['message'])+'"', check=True)
             except:
-                print('该消息无法发送，已记录')
-                f = open('FailedMessage','a', encoding = 'UTF-8')
-                f.write(originalMessage + '\n')
-                f.close()
+                print('消息发送失败，尝试转换为图片')
+                originalMessage = ''.join(message['message'])
+                toMessage = message['message']
+                pictureTransform(toMessage)
+                try:
+                    run("python sender.pyw " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(toMessage) +'"', check=True)
+                except:
+                    print('该消息无法发送，已记录')
+                    f = open('FailedMessage','a', encoding = 'UTF-8')
+                    f.write(originalMessage + '\n')
+                    f.close()
         
         sleep(0.03)
         messageQueue.task_done()
@@ -184,9 +194,9 @@ async def main():
     print('wb_ua:'+wb_ua)
     
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(ListenWeibo, 'interval', seconds=61)
+    scheduler.add_job(ListenWeibo, 'interval', seconds=43)
     scheduler.add_job(ListenLive, 'interval', seconds=37)
-    scheduler.add_job(ListenDynamic, 'interval', seconds=63)
+    scheduler.add_job(ListenDynamic, 'interval', seconds=61)
     scheduler.start()
 
 async def ListenWeibo():
@@ -223,14 +233,14 @@ async def ListenLive():
     print('查询直播动态...')
     for i in range(len(bili_uid_list)):
         roomid = get_live_room_id(bili_uid_list[i])
-        live_status = GetLiveStatus(roomid)
+        live_status = await GetLiveStatus(roomid)
         if(live_status):
             content = [bili_name_list[i] + '开播啦！\n直播间标题：' + live_status]
             print(content[0])
             # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, bili_name_list[i] + '开播啦！\n直播间标题：' + live_status)
             put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
 
-def GetLiveStatus(uid):
+async def GetLiveStatus(uid):
     res = requests.get('https://api.live.bilibili.com/room/v1/Room/get_info?device=phone&;platform=ios&scale=3&build=10000&room_id=' + str(uid))
     #res = requests.get('https://api.live.bilibili.com/AppRoom/msg?room_id='+str(uid))
     #res = requests.get ('https://api.live.bilibili.com/xlive/web-room/v1/dM/gethistory?roomid=21463238')
@@ -433,6 +443,7 @@ class MyHandler(blivedm.BaseHandler):
 # 1392788 综合交流1区
 # 1691384 综合交流2区
 # 1407656 其它vtb相关
+# 3217045 猎鲨队
 
 def get_long_weibo(weibo_id, headers):
     """获取长微博"""
@@ -465,7 +476,7 @@ def parse_weibo(weibo_info):
         weibo['user_id'] = ''
         weibo['screen_name'] = ''
 
-    weibo['text'] = parse_text(weibo_info['text'])
+    weibo['text'] = parse_text(weibo_info['text'])[0]
 
     weibo['pics'] = get_pics(weibo_info)
     #return standardize_info(weibo)
@@ -537,7 +548,11 @@ def parse_text(wb_text):
             img_desc = img.getText()
         img.replaceWith(img_desc)
 
-    return wb_soup.getText() + '\n' + ''.join(pic_list)
+    res = []
+    res.append(wb_soup.getText())
+    res.append(''.join(pic_list))
+    
+    return res
 
 # 记录下最晚一条被发送的评论的时间
 # 爬取按热度排序的第一页评论，如果有符合条件的就发送
@@ -562,7 +577,9 @@ async def GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, we
         for comment in comments:
             # 符合条件的评论，发送并爬取楼中楼
             # 预先处理，去掉xml
-            comment['text'] = parse_text(comment['text'])
+            comment_with_pic = parse_text(comment['text'])
+            comment['text'] = comment_with_pic[0]
+            comment['pic'] = comment_with_pic[1]
             
             comment_created_time = get_created_time(comment['created_at'])
             if comment['user']['id'] == uid and last_comment_time < comment_created_time:
@@ -575,6 +592,8 @@ async def GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, we
                 content.append(comment['text'])
                 content.append('\n')
                 content.append('原微博地址：'+weibo_url)
+                content.append('\n')
+                content.append(comment['pic'])
                 content_list.append(content)
             # 不符合条件的评论，只爬取楼中楼
             # print(type(comment['comments']))
@@ -592,13 +611,17 @@ async def GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, we
                     content.append('\n')
 
                     # 去除xml
-                    inner_comment['text'] = parse_text(inner_comment['text'])
+                    inner_comment_with_pic = parse_text(inner_comment['text'])
+                    inner_comment['text'] = inner_comment_with_pic[0]
+                    inner_comment['pic'] = inner_comment_with_pic[1]
                     
                     content.append(inner_comment['text'])
                     content.append('\n')
                     content.append('原评论内容：'+comment['text'])
                     content.append('\n')
                     content.append('原微博地址：'+weibo_url)
+                    content.append('\n')
+                    content.append(inner_comment['pic'])
                     content_list.append(content)
         # 更新最晚时间
         print('now_comment_time:'+now_comment_time.strftime("%Y-%m-%d %H:%M:%S"))
