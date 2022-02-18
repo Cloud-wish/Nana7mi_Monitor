@@ -8,7 +8,7 @@
 运行main.py即可
 
 ## 需求
-- Python 3.8 和所需要的运行库
+- Python 3.8 和所需要的包
 - go-cqhttp
 - blivedm
 
