@@ -28,9 +28,13 @@ TEST_ROOM_IDS = [
 
 TEST_ROOM_ID = 21452505
 
+# 要抓取的微博uid列表
 wb_uid_list=[7198559139]
+# 提醒时所用的名称
 wb_name_list=['海海']
+# 你的cookie
 wb_cookie = ''
+# 你的UA
 wb_ua = ''
 
 bili_uid_list=[434334701]
@@ -177,13 +181,17 @@ async def main():
     
     senderThread = threading.Thread(target = messageSender)
     senderThread.start()
-    
+
+    # 直播间监控的客户端
     await run_single_client()
 
+    # 最新微博的时间
     global last_weibo_time
     last_weibo_time = datetime.now()
+    # 最新微博评论的时间
     global last_comment_time
     last_comment_time = datetime.now()
+    # 最新B站动态的id
     global last_dynamic_id
     last_dynamic_id = ''
 
@@ -194,27 +202,32 @@ async def main():
     print('wb_ua:'+wb_ua)
     
     scheduler = AsyncIOScheduler()
+    # 添加微博监听的定时任务
     scheduler.add_job(ListenWeibo, 'interval', seconds=43)
+    # 添加直播间监听的定时任务
     scheduler.add_job(ListenLive, 'interval', seconds=37)
+    # 添加动态监听的定时任务
     scheduler.add_job(ListenDynamic, 'interval', seconds=61)
     scheduler.start()
 
 async def ListenWeibo():
     print('查询微博动态...')
     for i in range(min(len(wb_uid_list),len(wb_name_list))):
+        # wb_content是本次抓取到的新微博和微博评论列表
+        # 其中每一个元素（content）是包含一条微博或评论内容的列表
         wb_content = await GetWeibo(wb_uid_list[i], i)
         """
         content = '\n'.join(wb_content)
         if(content != ''):
             print('微博内容：'+content)
-            # await send_qq_group_msg(271216120, content)
             await send_guild_channel_msg(49857441636955271, 1405378, content)
         """
         if(wb_content):
             for content in wb_content:
-                # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
+                # content是列表，要获取字符串使用''.join(content)
+                # 图片已经转换为QQ机器人支持的CQ码格式
                 put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
-                print('微博内容：' + ''.join(content))
+                print('微博内容：' + )
 
 def get_live_room_id(mid):
     res = requests.get('https://api.bilibili.com/x/space/acc/info?mid='+str(mid)+'&jsonp=jsonp')
