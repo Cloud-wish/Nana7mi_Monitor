@@ -24,8 +24,16 @@ def messageSend():
     }
     try:
         response = send_guild_channel_msg(message)
-    except:
-        print(str(response))
+        logfile = open('sender_log','a', encoding = 'UTF-8')
+        logfile.write(time.strftime('%Y-%m-%d %H:%M:%S\n',time.localtime(time.time())))
+        logfile.write(str(response)+' '+response.text+'\n')
+        logfile.close()
+    except Exception as e:
+        logfile = open('sender_log','a', encoding = 'UTF-8')
+        logfile.write(time.strftime('%Y-%m-%d %H:%M:%S\n',time.localtime(time.time())))
+        logfile.write(repr(e)+'\n')
+        logfile.close()
+        print(repr(e))
         os._exit(-1)
             
 if __name__ == '__main__':

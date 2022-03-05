@@ -12,13 +12,15 @@ import os
 from time import sleep
 from subprocess import run
 
+from playwright.async_api import async_playwright
+
 from PIL import Image, ImageFont, ImageDraw
 import textwrap
 
 import blivedm
 
 # 微软雅黑的字体
-path_to_ttf = r'c:\windows\font\msyh.ttc'
+path_to_ttf = 'font/msyh.ttc'
 font = ImageFont.truetype(path_to_ttf, size=16, encoding='unic')
 
 # 直播间ID的取值看直播间URL
@@ -28,13 +30,9 @@ TEST_ROOM_IDS = [
 
 TEST_ROOM_ID = 21452505
 
-# 要抓取的微博uid列表
 wb_uid_list=[7198559139]
-# 提醒时所用的名称
 wb_name_list=['海海']
-# 你的cookie
 wb_cookie = ''
-# 你的UA
 wb_ua = ''
 
 bili_uid_list=[434334701]
@@ -102,6 +100,7 @@ def messageSend(message):
 """
 
 # 一个中文字大小为16x16
+"""
 def pictureTransform(message):
     toPicture = []
     toRemove = []
@@ -123,36 +122,83 @@ def pictureTransform(message):
     draw.text(xy=(5,5), text=toPicture, font=font, fill=(0,0,0,255))
     img.save('C:\\TempPic\\output.png')
     message.insert(begLen, '[CQ:image,file=file:///C:\\TempPic\\output.png]')
+"""
+
+def doPicTrans(msg, index):
+    msg = textwrap.fill(text = msg, width = 20 ,drop_whitespace = False, replace_whitespace = False)
+    img = Image.new(mode = 'RGB', size=(330, 10 + (22) * (msg.count('\n') + 1)), color = (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    draw.text(xy=(5,5), text=msg, font=font, fill=(0,0,0,255))
+    img.save('/home/wishcloud/Nana7mi_Monitor/TempPic/output'+str(index)+'.png')
+
+def pictureTransform(message):
+    toRemove = []
+    toPicture = []
+    i = 0
+    while i < len(message):
+        # print(message[i])
+        if(message[i].startswith('[CQ')):
+            if(len(toPicture) == 0):
+                i = i + 1
+                continue
+            # 把之前toPicture里的转为图片
+            # print('toPicture:'+''.join(toPicture))
+            doPicTrans(''.join(toPicture), i)
+            if(i > 0):
+                message.insert(i - 1, '[CQ:image,file=file:////home/wishcloud/Nana7mi_Monitor/TempPic/output'+str(i)+'.png]')
+                i = i + 1
+            toPicture = []
+        else:
+            toPicture.append(message[i])
+            toRemove.append(message[i])
+        i = i + 1
+    if(len(toPicture) > 0):
+        # print('end toPicture:'+''.join(toPicture))
+        doPicTrans(''.join(toPicture), len(message))
+        message.append('[CQ:image,file=file:////home/wishcloud/Nana7mi_Monitor/TempPic/output'+str(len(message))+'.png]')
+    for content in toRemove:
+        message.remove(content)
 
 def messageSender():
     while True:
         message = messageQueue.get(block = True, timeout = None)
-        
+        logfile = open('main_log','a', encoding = 'UTF-8')
+        logfile.write(time.strftime('%Y-%m-%d %H:%M:%S\n',time.localtime(time.time())))
         try:
-            run("python sender.pyw " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(message['message'])+'"', check=True)
-        except:
-            print('消息发送失败，尝试加空格')
-            i = len(message['message']) - 1
-            while i >= 0:
-                if(message['message'][i].startswith('[') == False):
-                    message['message'][i] = message['message'][i] + ' '
-                    break
-                i = i - 1
-            try:
-                run("python sender.pyw " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(message['message'])+'"', check=True)
-            except:
-                print('消息发送失败，尝试转换为图片')
-                originalMessage = ''.join(message['message'])
-                toMessage = message['message']
-                pictureTransform(toMessage)
-                try:
-                    run("python sender.pyw " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(toMessage) +'"', check=True)
-                except:
-                    print('该消息无法发送，已记录')
-                    f = open('FailedMessage','a', encoding = 'UTF-8')
-                    f.write(originalMessage + '\n')
-                    f.close()
-        
+            logfile.write('消息内容：' + (''.join(message['message']))+'\n')
+            code = os.WEXITSTATUS(os.system("python3 sender.pyw " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(message['message'])+'"'))
+            if code == 255:
+                # logfile.write(repr(e) + '\n' + '消息发送失败，尝试加空格')
+                # print(repr(e))
+                logfile.write('消息发送失败，尝试加空格'+'\n')
+                print('消息发送失败，尝试加空格')
+                i = len(message['message']) - 1
+                while i >= 0:
+                    if(message['message'][i].startswith('[') == False):
+                        message['message'][i] = message['message'][i] + ' '
+                        break
+                    i = i - 1
+                
+                code = os.WEXITSTATUS(os.system("python3 sender.pyw " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(message['message'])+'"'))
+                if code == 255:
+                    # logfile.write(repr(e) + '\n' + '消息发送失败，尝试转换为图片')
+                    # print(repr(e))
+                    logfile.write('消息发送失败，尝试转换为图片'+'\n')
+                    print('消息发送失败，尝试转换为图片')
+                    originalMessage = ''.join(message['message'])
+                    toMessage = message['message']
+                    pictureTransform(toMessage)
+                    code = os.WEXITSTATUS(os.system("python3 sender.pyw " + str(message['guild_id']) +' '+ str(message['channel_id']) +' "'+ ''.join(toMessage) +'"'))
+                    if code == 255:
+                        # print(repr(e))
+                        print('该消息无法发送，已记录'+'\n')
+                        f = open('FailedMessage','a', encoding = 'UTF-8')
+                        # f.write(repr(e) + '\n')
+                        f.write(originalMessage + '\n')
+                        f.close()
+        except Exception as e:
+            logfile.write(repr(e))
+        logfile.close()
         sleep(0.03)
         messageQueue.task_done()
 
@@ -181,17 +227,13 @@ async def main():
     
     senderThread = threading.Thread(target = messageSender)
     senderThread.start()
-
-    # 直播间监控的客户端
+    
     await run_single_client()
 
-    # 最新微博的时间
     global last_weibo_time
     last_weibo_time = datetime.now()
-    # 最新微博评论的时间
     global last_comment_time
     last_comment_time = datetime.now()
-    # 最新B站动态的id
     global last_dynamic_id
     last_dynamic_id = ''
 
@@ -202,32 +244,27 @@ async def main():
     print('wb_ua:'+wb_ua)
     
     scheduler = AsyncIOScheduler()
-    # 添加微博监听的定时任务
     scheduler.add_job(ListenWeibo, 'interval', seconds=43)
-    # 添加直播间监听的定时任务
-    scheduler.add_job(ListenLive, 'interval', seconds=37)
-    # 添加动态监听的定时任务
+    scheduler.add_job(ListenLive, 'interval', seconds=57)
     scheduler.add_job(ListenDynamic, 'interval', seconds=61)
     scheduler.start()
 
 async def ListenWeibo():
     print('查询微博动态...')
     for i in range(min(len(wb_uid_list),len(wb_name_list))):
-        # wb_content是本次抓取到的新微博和微博评论列表
-        # 其中每一个元素（content）是包含一条微博或评论内容的列表
         wb_content = await GetWeibo(wb_uid_list[i], i)
         """
         content = '\n'.join(wb_content)
         if(content != ''):
             print('微博内容：'+content)
+            # await send_qq_group_msg(271216120, content)
             await send_guild_channel_msg(49857441636955271, 1405378, content)
         """
         if(wb_content):
             for content in wb_content:
-                # content是列表，要获取字符串使用''.join(content)
-                # 图片已经转换为QQ机器人支持的CQ码格式
+                # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
                 put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
-                print('微博内容：' + )
+                print('微博内容：' + ''.join(content))
 
 def get_live_room_id(mid):
     res = requests.get('https://api.bilibili.com/x/space/acc/info?mid='+str(mid)+'&jsonp=jsonp')
@@ -286,13 +323,29 @@ async def GetLiveStatus(uid):
 async def ListenDynamic():
     print('查询B站动态...')
     for i in range(len(bili_uid_list)):
-        dynamic_content = GetDynamicStatus(bili_uid_list[i], i)
+        dynamic_content = await GetDynamicStatus(bili_uid_list[i], i)
         for content in dynamic_content:
             # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
             put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
             print('动态内容：' + ''.join(content))
 
-def GetDynamicStatus(uid, biliindex):
+async def GetDynamicContent(dynamic_id):
+    async with async_playwright() as p:
+        browser = await p.webkit.launch()
+        device = p.devices['iPhone 12 Pro']
+        context = await browser.new_context(
+            **device
+            )
+        page = await context.new_page()
+        await page.set_viewport_size({'width':560, 'height':3500})
+        await page.goto('https://m.bilibili.com/dynamic/'+dynamic_id)
+        await page.locator('#app > div > div.up-archive').scroll_into_view_if_needed()
+        pic_path = '/home/wishcloud/Nana7mi_Monitor/TempPic/dynamic_'+dynamic_id+'_screenshot.png'
+        await page.locator('#app > div > div.launch-app-btn.card-wrap > div').screenshot(path=pic_path)
+        await browser.close()
+        return pic_path
+
+async def GetDynamicStatus(uid, biliindex):
     #print('Debug uid  '+str(uid))
     global last_dynamic_id
     print('last_dynamic_id:'+last_dynamic_id)
@@ -331,6 +384,12 @@ def GetDynamicStatus(uid, biliindex):
                 break
             if last_dynamic_id == dynamic_id:
                 break
+            # 以下是处理新动态的内容
+            
+            pic_path = await GetDynamicContent(dynamic_id)
+            content.append('[CQ:image,file=file:///'+pic_path+']')
+            content.append('\n')
+            """
             if (cards_data[index]['desc']['type'] == 64):
                 content.append(bili_name_list[biliindex] +'发了新专栏「'+ cards_data[index]['card']['title'] + '」并说： ' +cards_data[index]['card']['dynamic'])
                 content.append('\n')
@@ -359,8 +418,8 @@ def GetDynamicStatus(uid, biliindex):
                         else:
                             #这个是不带图的自己发的动态
                             content_list.append(bili_name_list[biliindex]+ '发了新动态： ' +cards_data[index]['card']['item']['content'])
-                            content.append('\n')
-            content.append('本条动态地址为'+'https://t.bilibili.com/'+ cards_data[index]['desc']['dynamic_id_str'])
+            """
+            content.append('本条动态地址为'+'https://m.bilibili.com/dynamic/'+ cards_data[index]['desc']['dynamic_id_str'])
             content_list.append(content)
         except Exception as err:
                 print('PROCESS ERROR')
@@ -537,20 +596,21 @@ def parse_text(wb_text):
     pic_list = []
     for a in all_a:
         # print('a:'+str(a))
-        pic_link = a.get('data-url')
+        pic_link = a.get('href')
         if pic_link == None:
             pic_link = a.getText()
             a.replaceWith(pic_link)
         else:
-            pic_link = pic_link.replace('\\"','')
             # 判断是否为图片
-            pic_href = a.get('href').replace('\\"','')
-            if pic_href.endswith('.jpg') or pic_href.endswith('.jpeg') or pic_href.endswith('.png') or pic_href.endswith('.gif'):
+            if pic_link.endswith('.jpg') or pic_link.endswith('.jpeg') or pic_link.endswith('.png') or pic_link.endswith('.gif'):
                 # 写入cq码
                 # print('[CQ:image,file='+pic_link+']')
                 pic_list.append('[CQ:image,file='+pic_link+']')
                 a.extract()
             else: # 不是图片
+                # 是at
+                if a.getText().startswith('@'):
+                    pic_link = a.getText()
                 a.replaceWith(pic_link)
                 
 
@@ -563,7 +623,7 @@ def parse_text(wb_text):
 
     res = []
     res.append(wb_soup.getText())
-    res.append(''.join(pic_list))
+    res.append(pic_list)
     
     return res
 
@@ -580,19 +640,21 @@ async def GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, we
     }
     r = requests.get(url, params=params, headers=headers)
     res = r.json()
+    global last_comment_time
+    now_comment_time = last_comment_time
     if res['ok']: # ok为0代表没有评论
-        global last_comment_time
         comments = res['data']['data']
-        now_comment_time = last_comment_time
         if not comments:
             print('no comment')
-            return
+            return now_comment_time
         for comment in comments:
             # 符合条件的评论，发送并爬取楼中楼
             # 预先处理，去掉xml
             comment_with_pic = parse_text(comment['text'])
             comment['text'] = comment_with_pic[0]
-            comment['pic'] = comment_with_pic[1]
+            comment_pic_list = comment_with_pic[1]
+            if comment.get('pic'):
+                comment_pic_list.append('[CQ:image,file='+comment['pic']['large']['url']+']')
             
             comment_created_time = get_created_time(comment['created_at'])
             if comment['user']['id'] == uid and last_comment_time < comment_created_time:
@@ -606,7 +668,8 @@ async def GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, we
                 content.append('\n')
                 content.append('原微博地址：'+weibo_url)
                 content.append('\n')
-                content.append(comment['pic'])
+                for pic in comment_pic_list:
+                    content.append(pic)
                 content_list.append(content)
             # 不符合条件的评论，只爬取楼中楼
             # print(type(comment['comments']))
@@ -626,22 +689,30 @@ async def GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, we
                     # 去除xml
                     inner_comment_with_pic = parse_text(inner_comment['text'])
                     inner_comment['text'] = inner_comment_with_pic[0]
-                    inner_comment['pic'] = inner_comment_with_pic[1]
+                    inner_comment_pic_list = inner_comment_with_pic[1]
+                    if inner_comment.get('pic'):
+                        inner_comment_pic_list.append('[CQ:image,file='+inner_comment['pic']['large']['url']+']')
                     
                     content.append(inner_comment['text'])
                     content.append('\n')
                     content.append('原评论内容：'+comment['text'])
                     content.append('\n')
+                    # 加入回复评论的图片
+                    for pic in comment_pic_list:
+                        content.append(pic)
+                        
+                    content.append('\n')
                     content.append('原微博地址：'+weibo_url)
                     content.append('\n')
-                    content.append(inner_comment['pic'])
+                    for pic in inner_comment_pic_list:
+                        content.append(pic)
                     content_list.append(content)
         # 更新最晚时间
         print('now_comment_time:'+now_comment_time.strftime("%Y-%m-%d %H:%M:%S"))
-        last_comment_time = now_comment_time
+        # last_comment_time = now_comment_time
     else:
         print("no comment!")
-    return
+    return now_comment_time
 
 async def GetWeibo(uid, wbindex):
     global last_weibo_time
@@ -665,6 +736,7 @@ async def GetWeibo(uid, wbindex):
         weibos = res['data']['cards']
         # 初值
         now_weibo_time = last_weibo_time
+        now_comment_time = last_comment_time
         for i in range(min(len(weibos), 5)):
             w = weibos[i]
             if w['card_type'] == 9:
@@ -682,8 +754,9 @@ async def GetWeibo(uid, wbindex):
                 # 保存要插入在content_list中的位置
                 content_index = len(content_list)
                 # 查询楼中楼
-                await GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, weibo_url)
-
+                comment_created_time = await GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, weibo_url)
+                if now_comment_time < comment_created_time:
+                    now_comment_time = comment_created_time
                 """
                 if weibo_istop and weibo_istop == 1:
                     # 如果置顶微博在上一次查询之后发出，则需要发送
@@ -726,6 +799,10 @@ async def GetWeibo(uid, wbindex):
                     content.append('\n')
                     content.append('原微博：'+weibo['retweet']['text'])
                     content.append('\n')
+                    # 添加原微博的图片
+                    for pic_info in weibo['retweet']['pics']:
+                        content.append('[CQ:image,file='+pic_info+']')
+                    content.append('\n')
                     content.append('本条微博地址是：' + weibo_url)
                     
                 else:  # 原创
@@ -740,12 +817,14 @@ async def GetWeibo(uid, wbindex):
                     content.append(weibo['text'])
                     content.append('\n')
                     content.append('本条微博地址是：' + weibo_url)
+                    content.append('\n')
                     for pic_info in weibo['pics']:
                         content.append('[CQ:image,file='+pic_info+']')
                 content_list.insert(content_index, content)
     print('now_weibo_time:'+now_weibo_time.strftime("%Y-%m-%d %H:%M:%S"))
     # 更新last_weibo_time
     last_weibo_time = now_weibo_time
+    last_comment_time = now_comment_time
     return content_list
 
 if __name__ == '__main__':
