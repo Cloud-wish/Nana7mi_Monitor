@@ -42,9 +42,17 @@ danmaku_monitor_uid_list=[7706705, 14387072]
 
 # 3215377 SC动态
 # 3215378 微博/直播动态
+# 1405112 直播讨论
+# 1405378 七海动态
+# 1392788 综合交流1区
+# 1691384 综合交流2区
+# 1407656 其它vtb相关
+# 3217045 猎鲨队
+# 4241211 禁言名单
 
 sc_notify_channel = 3215377
 nana7mi_notify_channel = 3215378
+block_notify_channel = 4241211
 live_discuss_channel = 1405112
 
 async def send_qq_group_msg(group_id, message):
@@ -232,10 +240,10 @@ async def main():
 
     global last_weibo_time
     last_weibo_time = datetime.now()
+    global last_dynamic_time
+    last_dynamic_time = datetime.now()
     global last_comment_time
     last_comment_time = datetime.now()
-    global last_dynamic_id
-    last_dynamic_id = ''
 
     global wb_cookie
     global wb_ua
@@ -244,15 +252,19 @@ async def main():
     print('wb_ua:'+wb_ua)
     
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(ListenWeibo, 'interval', seconds=43)
-    scheduler.add_job(ListenLive, 'interval', seconds=57)
+    scheduler.add_job(ListenWeibo, 'interval', seconds=57)
+    scheduler.add_job(ListenLive, 'interval', seconds=53)
     scheduler.add_job(ListenDynamic, 'interval', seconds=61)
     scheduler.start()
 
 async def ListenWeibo():
     print('查询微博动态...')
     for i in range(min(len(wb_uid_list),len(wb_name_list))):
-        wb_content = await GetWeibo(wb_uid_list[i], i)
+        wb_content = None
+        try:
+            wb_content = await GetWeibo(wb_uid_list[i], i)
+        except RequestsJSONDecodeError as e:
+            print("JSON解码错误，可能是502错误")
         """
         content = '\n'.join(wb_content)
         if(content != ''):
@@ -347,8 +359,8 @@ async def GetDynamicContent(dynamic_id):
 
 async def GetDynamicStatus(uid, biliindex):
     #print('Debug uid  '+str(uid))
-    global last_dynamic_id
-    print('last_dynamic_id:'+last_dynamic_id)
+    global last_dynamic_time
+    print('last_dynamic_time:'+last_dynamic_time.strftime("%Y-%m-%d %H:%M:%S"))
     headers = {
         'Referer': 'https://space.bilibili.com/{user_uid}/'.format(user_uid=uid)
     }
@@ -365,26 +377,22 @@ async def GetDynamicStatus(uid, biliindex):
     index = 0
     content_list=[]
     cards_data[0]['card'] = json.loads(cards_data[0]['card'],encoding='gb2312')
-    nowtime = time.time().__int__()
 
-    now_dynamic_id = ''
+    now_dynamic_time = last_dynamic_time
     # card是字符串，需要重新解析
     while index < len(cards_data):
         #print(cards_data[index]['desc'])
         try:
             dynamic_id = cards_data[index]['desc']['dynamic_id_str']
-
-            # 记录最新一条动态id
-            if now_dynamic_id == '':
-                now_dynamic_id = dynamic_id
             # print('nowtime: ' + str(nowtime))
             # print('timestamp: ' + str(cards_data[index]['desc']['timestamp']))
             content = []
-            if nowtime - cards_data[index]['desc']['timestamp'] > 69:
-                break
-            if last_dynamic_id == dynamic_id:
+            created_time = datetime.fromtimestamp(int(cards_data[index]['desc']['timestamp']))
+            if not (last_dynamic_time < created_time): # 不是新动态
                 break
             # 以下是处理新动态的内容
+            if now_dynamic_time < created_time:
+                 now_dynamic_time = created_time
             
             pic_path = await GetDynamicContent(dynamic_id)
             content.append('[CQ:image,file=file:///'+pic_path+']')
@@ -430,10 +438,9 @@ async def GetDynamicStatus(uid, biliindex):
         if len(cards_data) == index:
             break
         cards_data[index]['card'] = json.loads(cards_data[index]['card']) # 加载下一条动态
-    # 更新last_dynamic_id
-    print('now_dynamic_id:'+now_dynamic_id)
-    if now_dynamic_id != '':
-        last_dynamic_id = now_dynamic_id
+    # 更新last_dynamic_time
+    print('now_dynamic_time:'+now_dynamic_time.strftime("%Y-%m-%d %H:%M:%S"))
+    last_dynamic_time = now_dynamic_time
     return content_list
 
 
@@ -505,17 +512,15 @@ class MyHandler(blivedm.BaseHandler):
 
     async def _on_super_chat(self, client: blivedm.BLiveClient, message: blivedm.SuperChatMessage):
         # print(f" - $ $ $ - \n「`七海Nana7mi`收到了`{message.uname}`发送了{message.price}块 SC:`{message.message}`」")
-        content = [f'醒目留言 ¥{message.price} {message.uname}：{message.message}']
+        content = ['---------------\n', f'醒目留言 ¥{message.price} {message.uname}：{message.message}', '\n---------------']
         print(f'[{client.room_id}] 醒目留言 ¥{message.price} {message.uname}：{message.message}')
         # await send_guild_channel_msg(49857441636955271, sc_notify_channel, f'醒目留言 ¥{message.price} {message.uname}：{message.message}')
         put_guild_channel_msg(49857441636955271, sc_notify_channel, content)
-        
-# 1405112 直播讨论
-# 1405378 七海动态
-# 1392788 综合交流1区
-# 1691384 综合交流2区
-# 1407656 其它vtb相关
-# 3217045 猎鲨队
+        # put_guild_channel_msg(49857441636955271, live_discuss_channel, content)
+
+    async def _on_room_block(self, client: blivedm.BLiveClient, message: blivedm.RoomBlockMessage):
+        content = [f'恭喜{message.uname}(uid：{message.uid})在海海直播间被拉黑了']
+        put_guild_channel_msg(49857441636955271, block_notify_channel, content)
 
 def get_long_weibo(weibo_id, headers):
     """获取长微博"""
@@ -729,7 +734,6 @@ async def GetWeibo(uid, wbindex):
         'Cookie': wb_cookie,
         'User-Agent': wb_ua
     }
-    
     r = requests.get(url, params=params, headers=headers)
     res = r.json()
     if res['ok']:
@@ -744,6 +748,8 @@ async def GetWeibo(uid, wbindex):
                 is_long = w['mblog'].get('isLongText')
                 weibo_id = w['mblog']['id']
                 mid = w['mblog']['mid']
+                # 获取用户简介
+                user_desc = w['mblog']['user']['description']
                 
                 weibo_url = 'https://m.weibo.cn/detail/' + weibo_id
                 weibo_avatar = w['mblog']['user']['avatar_hd']
@@ -825,7 +831,29 @@ async def GetWeibo(uid, wbindex):
     # 更新last_weibo_time
     last_weibo_time = now_weibo_time
     last_comment_time = now_comment_time
+    UpdateUserDesc(wbindex, user_desc)
     return content_list
+
+def UpdateUserDesc(wbindex, user_desc):
+    uid = wb_uid_list[wbindex]
+    try:
+        with open(str(uid)+'WeiboDesc','r', encoding='UTF-8') as f:
+            last_user_desc = f.read()
+            f.close()
+    except Exception as err:
+            last_user_desc = ''
+            print(repr(err))
+            return
+    if (user_desc != last_user_desc):
+        content = [wb_name_list[wbindex] + '把简介从\n' + last_user_desc + '\n' + '改成了\n' + user_desc]
+        put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
+        try:
+            with open(str(uid)+'WeiboDesc','w', encoding='UTF-8') as f:
+                f.write(user_desc)
+                f.close()
+        except Exception as err:
+                pass
+        
 
 if __name__ == '__main__':
     asyncio.get_event_loop().create_task(main())
