@@ -263,8 +263,9 @@ async def ListenWeibo():
         wb_content = None
         try:
             wb_content = await GetWeibo(wb_uid_list[i], i)
-        except RequestsJSONDecodeError as e:
-            print("JSON解码错误，可能是502错误")
+        except requests.exceptions.JSONDecodeError as e:
+            print("JSON解码错误，可能是502错误，取消该次抓取")
+            return
         """
         content = '\n'.join(wb_content)
         if(content != ''):
@@ -522,7 +523,7 @@ class MyHandler(blivedm.BaseHandler):
         content = [f'恭喜{message.uname}(uid：{message.uid})在海海直播间被拉黑了']
         put_guild_channel_msg(49857441636955271, block_notify_channel, content)
 
-def get_long_weibo(weibo_id, headers):
+def get_long_weibo(weibo_id, headers, is_cut):
     """获取长微博"""
     for i in range(3):
         url = 'https://m.weibo.cn/detail/' + weibo_id
@@ -537,7 +538,7 @@ def get_long_weibo(weibo_id, headers):
         if weibo_info:
             weibo = parse_weibo(weibo_info)
             #截短长微博
-            if(len(weibo['text']) > 100):
+            if(is_cut and len(weibo['text']) > 100):
                 weibo['text'] = weibo['text'][0:97] + "..."
             print('after cut: ' + weibo['text'])
             return weibo
@@ -614,8 +615,12 @@ def parse_text(wb_text):
                 a.extract()
             else: # 不是图片
                 # 是at
+                """
                 if a.getText().startswith('@'):
                     pic_link = a.getText()
+                """
+                # 3.25更改：都提取成文字
+                pic_link = a.getText()
                 a.replaceWith(pic_link)
                 
 
@@ -787,13 +792,13 @@ async def GetWeibo(uid, wbindex):
                     retweet_id = retweeted_status.get('id')
                     is_long_retweet = retweeted_status.get('isLongText')
                     if is_long:
-                        weibo = get_long_weibo(weibo_id, headers)
+                        weibo = get_long_weibo(weibo_id, headers, False) # 捕捉对象的长微博不截断
                         if not weibo:
                             weibo = parse_weibo(w['mblog'])
                     else:
                         weibo = parse_weibo(w['mblog'])
                     if is_long_retweet:
-                        retweet = get_long_weibo(retweet_id, headers)
+                        retweet = get_long_weibo(retweet_id, headers, True) # 转发的长微博截断
                         if not retweet:
                             retweet = parse_weibo(retweeted_status)
                     else:
@@ -813,7 +818,7 @@ async def GetWeibo(uid, wbindex):
                     
                 else:  # 原创
                     if is_long:
-                        weibo = get_long_weibo(weibo_id, headers)
+                        weibo = get_long_weibo(weibo_id, headers, False) # 捕捉对象的长微博不截断
                         if not weibo:
                             weibo = parse_weibo(w['mblog'])
                     else:
