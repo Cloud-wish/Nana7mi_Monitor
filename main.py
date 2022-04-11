@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime,date,timedelta
 import random
+from tokenize import Name
 import requests
 import json,collections,xml
 from bs4 import BeautifulSoup
@@ -22,6 +23,10 @@ import blivedm
 # 微软雅黑的字体
 path_to_ttf = 'font/msyh.ttc'
 font = ImageFont.truetype(path_to_ttf, size=16, encoding='unic')
+cur_path=os.path.dirname(__file__)
+cur_path=os.path.split(os.path.realpath(__file__))[0]
+if(cur_path[-1] != '/'):
+    cur_path = cur_path+'/'
 
 # 直播间ID的取值看直播间URL
 TEST_ROOM_IDS = [
@@ -30,6 +35,7 @@ TEST_ROOM_IDS = [
 
 TEST_ROOM_ID = 21452505
 
+liver_name='海海'
 wb_uid_list=[7198559139]
 wb_name_list=['海海']
 wb_cookie = ''
@@ -88,56 +94,13 @@ def put_guild_channel_msg(guild_id, channel_id, message):
     }
     messageQueue.put(data)
 
-"""
-def messageSend(message):
-    try:
-        response = send_guild_channel_msg(message)
-    except:
-        print('消息发送失败，添加空格重试')
-        sleep(0.03)
-        message['message'] = message['message'] + ' '
-        try:
-            response = send_guild_channel_msg(message)
-        except:
-            print('消息发送失败，内容：' + message['message'])
-            f = open('FailedMessage','a')
-            f.write(message['message'] + '\n')
-            f.close()
-            sleep(0.01)
-            os._exit(-1)
-"""
-
 # 一个中文字大小为16x16
-"""
-def pictureTransform(message):
-    toPicture = []
-    toRemove = []
-    begLen = 0
-    isBeg = True
-    for content in message:
-        if(content.startswith('[') == False):
-            isBeg = False
-            toPicture.append(content)
-            toRemove.append(content)
-        elif(isBeg == True):
-            begLen = begLen + 1
-    for content in toRemove:
-        message.remove(content)
-    toPicture = ''.join(toPicture)
-    toPicture = textwrap.fill(text = toPicture, width = 20 ,drop_whitespace = False, replace_whitespace = False)
-    img = Image.new(mode = 'RGB', size=(330, 10 + (22) * (toPicture.count('\n') + 1)), color = (255, 255, 255))
-    draw = ImageDraw.Draw(img)
-    draw.text(xy=(5,5), text=toPicture, font=font, fill=(0,0,0,255))
-    img.save('C:\\TempPic\\output.png')
-    message.insert(begLen, '[CQ:image,file=file:///C:\\TempPic\\output.png]')
-"""
-
 def doPicTrans(msg, index):
     msg = textwrap.fill(text = msg, width = 20 ,drop_whitespace = False, replace_whitespace = False)
     img = Image.new(mode = 'RGB', size=(330, 10 + (22) * (msg.count('\n') + 1)), color = (255, 255, 255))
     draw = ImageDraw.Draw(img)
     draw.text(xy=(5,5), text=msg, font=font, fill=(0,0,0,255))
-    img.save('/home/wishcloud/Nana7mi_Monitor/TempPic/output'+str(index)+'.png')
+    img.save(cur_path + 'TempPic/output'+str(index)+'.png')
 
 def pictureTransform(message):
     toRemove = []
@@ -153,7 +116,7 @@ def pictureTransform(message):
             # print('toPicture:'+''.join(toPicture))
             doPicTrans(''.join(toPicture), i)
             if(i > 0):
-                message.insert(i - 1, '[CQ:image,file=file:////home/wishcloud/Nana7mi_Monitor/TempPic/output'+str(i)+'.png]')
+                message.insert(i - 1, '[CQ:image,file=file:///'+cur_path+'TempPic/output'+str(i)+'.png]')
                 i = i + 1
             toPicture = []
         else:
@@ -163,7 +126,7 @@ def pictureTransform(message):
     if(len(toPicture) > 0):
         # print('end toPicture:'+''.join(toPicture))
         doPicTrans(''.join(toPicture), len(message))
-        message.append('[CQ:image,file=file:////home/wishcloud/Nana7mi_Monitor/TempPic/output'+str(len(message))+'.png]')
+        message.append('[CQ:image,file=file:///'+cur_path+'TempPic/output'+str(len(message))+'.png]')
     for content in toRemove:
         message.remove(content)
 
@@ -207,7 +170,7 @@ def messageSender():
         except Exception as e:
             logfile.write(repr(e))
         logfile.close()
-        sleep(0.03)
+        sleep(0.1)
         messageQueue.task_done()
 
 def read_config():
@@ -252,8 +215,8 @@ async def main():
     print('wb_ua:'+wb_ua)
     
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(ListenWeibo, 'interval', seconds=57)
-    scheduler.add_job(ListenLive, 'interval', seconds=53)
+    scheduler.add_job(ListenWeibo, 'interval', seconds=37)
+    scheduler.add_job(ListenLive, 'interval', seconds=33)
     scheduler.add_job(ListenDynamic, 'interval', seconds=61)
     scheduler.start()
 
@@ -297,9 +260,12 @@ async def ListenLive():
     for i in range(len(bili_uid_list)):
         roomid = get_live_room_id(bili_uid_list[i])
         live_status = await GetLiveStatus(roomid)
-        if(live_status):
-            content = [bili_name_list[i] + '开播啦！\n直播间标题：' + live_status]
-            print(content[0])
+        if(live_status[0] != 0):
+            if(live_status[0] == 1):
+                content = [bili_name_list[i] + '开播啦！\n直播间标题：' + live_status[1]]
+            elif(live_status[0] == -1):
+                content = ['[CQ:image,file=file:///'+cur_path+'ED/'+str(bili_uid_list[i])+'.jpg]', '\n', 'night night！']
+            print(''.join(content))
             # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, bili_name_list[i] + '开播啦！\n直播间标题：' + live_status)
             put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
 
@@ -324,14 +290,16 @@ async def GetLiveStatus(uid):
     except:
         now_live_status = '0'
         pass
-    f = open(str(uid)+'Live','w')
-    f.write(now_live_status)
-    f.close()
-    if last_live_str != '1':
-        if now_live_status == '1':
-            return live_title
-    return ''
-
+    if(now_live_status != last_live_str):
+        f = open(str(uid)+'Live','w')
+        f.write(now_live_status)
+        f.close()
+        if(now_live_status == '1'):
+            return (1,live_title)
+        else:
+            return (-1,'')
+    else:
+        return (0,'')
 
 async def ListenDynamic():
     print('查询B站动态...')
@@ -341,6 +309,17 @@ async def ListenDynamic():
             # await send_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
             put_guild_channel_msg(49857441636955271, nana7mi_notify_channel, content)
             print('动态内容：' + ''.join(content))
+
+async def ModifyPic(pic_path):
+    pic = Image.open(pic_path)
+    width = pic.size[0]
+    height = pic.size[1]
+    if((width/height) > 3):
+        res = Image.new(mode = 'RGB', size=(width, int(width/3)+1), color = (255, 255, 255))
+        res.paste(pic, (0,0,width,height))
+        pic_path = pic_path[:-4:] + '_resized.png'
+        res.save(pic_path)
+    return pic_path
 
 async def GetDynamicContent(dynamic_id):
     async with async_playwright() as p:
@@ -353,7 +332,7 @@ async def GetDynamicContent(dynamic_id):
         await page.set_viewport_size({'width':560, 'height':3500})
         await page.goto('https://m.bilibili.com/dynamic/'+dynamic_id)
         await page.locator('#app > div > div.up-archive').scroll_into_view_if_needed()
-        pic_path = '/home/wishcloud/Nana7mi_Monitor/TempPic/dynamic_'+dynamic_id+'_screenshot.png'
+        pic_path = cur_path+'TempPic/dynamic_'+dynamic_id+'_screenshot.png'
         await page.locator('#app > div > div.launch-app-btn.card-wrap > div').screenshot(path=pic_path)
         await browser.close()
         return pic_path
@@ -396,6 +375,7 @@ async def GetDynamicStatus(uid, biliindex):
                  now_dynamic_time = created_time
             
             pic_path = await GetDynamicContent(dynamic_id)
+            pic_path = await ModifyPic(pic_path)
             content.append('[CQ:image,file=file:///'+pic_path+']')
             content.append('\n')
             """
@@ -494,7 +474,7 @@ class MyHandler(blivedm.BaseHandler):
     async def _on_danmaku(self, client: blivedm.BLiveClient, message: blivedm.DanmakuMessage):
         # print(f'[{client.room_id}] {message.uname}：{message.msg}')
         if(danmaku_monitor_uid_list.count(message.uid) > 0):
-            content = [f'{message.uname}在海海直播间发送了弹幕：{message.msg}']
+            content = [f'{message.uname}在{liver_name}直播间发送了弹幕：{message.msg}']
             print(content[0])
             put_guild_channel_msg(49857441636955271, live_discuss_channel, content)
         elif(message.uid == 434334701):
@@ -512,15 +492,12 @@ class MyHandler(blivedm.BaseHandler):
         print(f'[{client.room_id}] {message.username} 购买{message.gift_name}')
 
     async def _on_super_chat(self, client: blivedm.BLiveClient, message: blivedm.SuperChatMessage):
-        # print(f" - $ $ $ - \n「`七海Nana7mi`收到了`{message.uname}`发送了{message.price}块 SC:`{message.message}`」")
         content = ['---------------\n', f'醒目留言 ¥{message.price} {message.uname}：{message.message}', '\n---------------']
         print(f'[{client.room_id}] 醒目留言 ¥{message.price} {message.uname}：{message.message}')
-        # await send_guild_channel_msg(49857441636955271, sc_notify_channel, f'醒目留言 ¥{message.price} {message.uname}：{message.message}')
         put_guild_channel_msg(49857441636955271, sc_notify_channel, content)
-        # put_guild_channel_msg(49857441636955271, live_discuss_channel, content)
 
     async def _on_room_block(self, client: blivedm.BLiveClient, message: blivedm.RoomBlockMessage):
-        content = [f'恭喜{message.uname}(uid：{message.uid})在海海直播间被拉黑了']
+        content = [f'恭喜 {message.uname} (uid：{message.uid})在{liver_name}直播间被拉黑了', f'\nB站个人空间：space.bilibili.com/{message.uid}']
         put_guild_channel_msg(49857441636955271, block_notify_channel, content)
 
 def get_long_weibo(weibo_id, headers, is_cut):
@@ -542,7 +519,7 @@ def get_long_weibo(weibo_id, headers, is_cut):
                 weibo['text'] = weibo['text'][0:97] + "..."
             print('after cut: ' + weibo['text'])
             return weibo
-        time.sleep(random.randint(6, 10))
+        time.sleep(random.randint(2, 5))
 
 
 def parse_weibo(weibo_info):
@@ -641,7 +618,7 @@ def parse_text(wb_text):
 # 爬取按热度排序的第一页评论，如果有符合条件的就发送
 # 爬取评论的楼中楼评论，如果有符合条件的就发送
 async def GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, weibo_url):
-    await asyncio.sleep(random.randint(2, 5))
+    await asyncio.sleep(random.random())
     url = 'https://m.weibo.cn/comments/hotflow?'
     params = {
         'id': weibo_id,
@@ -746,7 +723,7 @@ async def GetWeibo(uid, wbindex):
         # 初值
         now_weibo_time = last_weibo_time
         now_comment_time = last_comment_time
-        for i in range(min(len(weibos), 5)):
+        for i in range(min(len(weibos), 3 + 1)):
             w = weibos[i]
             if w['card_type'] == 9:
                 retweeted_status = w['mblog'].get('retweeted_status')
@@ -768,20 +745,6 @@ async def GetWeibo(uid, wbindex):
                 comment_created_time = await GetWeiboComment(weibo_id, mid, headers, uid, content_list, wbindex, weibo_url)
                 if now_comment_time < comment_created_time:
                     now_comment_time = comment_created_time
-                """
-                if weibo_istop and weibo_istop == 1:
-                    # 如果置顶微博在上一次查询之后发出，则需要发送
-                    if datetime.now() - created_time > timedelta(seconds = 69000):
-                        continue
-                else:
-                    # 记录除置顶以外最新一条微博id
-                    if now_weibo_id == '':
-                        now_weibo_id = weibo_id
-                if datetime.now() - created_time > timedelta(seconds = 69000):
-                    break
-                if last_weibo_id == weibo_id:
-                    break;
-                """
                 if not (last_weibo_time < created_time): # 不是新微博
                     continue
                 # 以下是处理新微博的部分
@@ -836,7 +799,10 @@ async def GetWeibo(uid, wbindex):
     # 更新last_weibo_time
     last_weibo_time = now_weibo_time
     last_comment_time = now_comment_time
-    UpdateUserDesc(wbindex, user_desc)
+    try:
+        UpdateUserDesc(wbindex, user_desc)
+    except (NameError, UnboundLocalError):
+        pass
     return content_list
 
 def UpdateUserDesc(wbindex, user_desc):
