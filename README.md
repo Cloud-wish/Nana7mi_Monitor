@@ -1,3 +1,4 @@
+**本项目已停止维护，请使用[Dynamic-Bot](https://github.com/Cloud-wish/Dynamic-Bot)**
 # Nana7mi_Monitor
 第一次写Python，基本语法都是现查的，勉强能实现效果。如果有时间会更新功能的，Bug尽量及时修复。
 ## 感谢
